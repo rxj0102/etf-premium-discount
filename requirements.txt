@@ -1,0 +1,11 @@
+yfinance>=0.2.40
+pandas>=2.0
+numpy>=1.26
+matplotlib>=3.8
+seaborn>=0.13
+fredapi>=0.5.1
+streamlit>=1.35
+plotly>=5.20
+jupyter>=1.0
+scipy>=1.11
+statsmodels>=0.14

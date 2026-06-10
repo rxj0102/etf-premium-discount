@@ -1,0 +1,105 @@
+# ETF Premium/Discount Mean Reversion
+
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+
+A research project analyzing **premium/discount mean reversion in fixed
+income ETFs** (HYG, LQD, JNK, TLT, AGG). Fixed income ETFs trade
+continuously while their underlying bonds trade over the counter and often
+stale-price, so the ETF price can deviate materially from its end-of-day NAV
+during stress. This project measures those dislocations as a 63-day rolling
+z-score of the premium/discount, runs an event study on ±2σ episodes,
+conditions the results on the VIX regime, and backtests a simple long-only
+discount-reversion strategy with a Streamlit monitoring dashboard.
+
+## Hypothesis
+
+> When a fixed income ETF's premium/discount to NAV exceeds two standard
+> deviations of its recent (63-day) history, the dislocation reflects
+> temporary liquidity pressure rather than a change in fundamental value, and
+> therefore mean-reverts over the following 1–20 trading days — faster and
+> more profitably after deep **discounts** and during **high-VIX** regimes.
+
+## Folder structure
+
+```
+etf-premium-discount/
+├── data/
+│   ├── fetch.py            # Download prices, VIX, NAV, OAS → data/raw/
+│   ├── raw/                # Raw CSVs (git-ignored, reproducible)
+│   └── processed/          # Derived tables (git-ignored)
+├── analysis/
+│   ├── spread.py           # Premium/discount, 63d z-score, ±2σ events
+│   ├── reversion.py        # Event study: forward returns & reversion paths
+│   └── regime.py           # High-VIX vs low-VIX regime comparison
+├── backtest/
+│   └── strategy.py         # Long-discount strategy backtest vs buy & hold
+├── dashboard/
+│   └── app.py              # Streamlit monitoring dashboard
+├── notebooks/
+│   └── research.ipynb      # Full narrative research notebook
+├── outputs/                # Saved PNG charts
+├── requirements.txt
+└── README.md
+```
+
+## Setup
+
+```bash
+# 1. Install dependencies (Python 3.10+)
+pip install -r requirements.txt
+
+# 2. (Optional) set a FRED API key for credit OAS data
+export FRED_API_KEY=your_key_here   # falls back to FRED's public CSV endpoint
+
+# 3. Fetch raw data (≈5 years of daily data)
+python data/fetch.py
+
+# 4. Run the analysis pipeline (each step saves CSVs + PNG charts)
+python analysis/spread.py
+python analysis/reversion.py
+python analysis/regime.py
+python backtest/strategy.py
+
+# 5. Launch the dashboard
+streamlit run dashboard/app.py
+
+# 6. Or explore the narrative notebook
+jupyter notebook notebooks/research.ipynb
+```
+
+## Key findings
+
+*(Placeholder — regenerate after running the pipeline on live data.)*
+
+- Spread history with stress episodes:
+
+  ![Spread history](outputs/spread_history.png)
+
+- Average post-event reversion paths (95% CI):
+
+  ![Reversion paths](outputs/reversion_paths.png)
+
+- High-VIX vs low-VIX regime comparison:
+
+  ![Regime comparison](outputs/regime_comparison.png)
+
+- Strategy vs buy-and-hold cumulative returns:
+
+  ![Backtest](outputs/backtest_cumulative.png)
+
+## Data sources
+
+| Dataset | Source | Notes |
+|---|---|---|
+| ETF OHLCV prices (HYG, LQD, JNK, TLT, AGG) | Yahoo Finance via `yfinance` | 5 years daily |
+| VIX (^VIX) | Yahoo Finance via `yfinance` | Daily close |
+| ETF NAV | Simulated (or user-supplied) | FRED publishes no ETF NAV series; NAV is modelled as price adjusted by a mean-reverting noise term bounded at ±0.5% (amplified in Mar 2020 / Oct 2022 stress windows). Drop a real NAV export at `data/raw/<TICKER>_nav_external.csv` to override. |
+| Credit OAS (BAMLH0A0HYM2, BAMLC0A0CM) | FRED via `fredapi` | Key-less fallback to FRED's public `fredgraph.csv` endpoint |
+
+If the network is unavailable, `data/fetch.py` falls back to clearly logged,
+reproducible simulations so the full pipeline still runs end to end.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
