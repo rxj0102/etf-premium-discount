@@ -103,3 +103,11 @@ reproducible simulations so the full pipeline still runs end to end.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Corrections and caveats
+
+- **Backtest timing.** Despite the documented "next-day close" execution, positions were shifted by one day, so a signal formed from day-t price and NAV earned the day-t+1 return (a fill at the very close that produced the signal). Execution is now lagged by two days (`EXEC_LAG`); pass `exec_lag=1` to reproduce the old convention.
+- **Position sizing look-ahead.** Inverse-volatility weights were rescaled by the full-sample mean of inverse volatility; they now use the expanding mean.
+- **The NAV series is simulated** unless you supply `data/raw/<TICKER>_nav_external.csv`. With simulated NAV the premium/discount is noise independent of subsequent price moves, so the backtest and event study demonstrate the pipeline, not a tradable edge. Add real issuer NAV data before drawing any conclusion from `backtest_summary.csv` or `event_study.csv`; regenerate them after the timing fix.
+- Event-study confidence bands treat events as independent although 20-day windows overlap, so they are too narrow.
+- `pytest` and CI added.
