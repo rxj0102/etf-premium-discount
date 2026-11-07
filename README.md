@@ -1,5 +1,7 @@
 # ETF Premium/Discount Mean Reversion
 
+[![CI](https://github.com/rxj0102/etf-premium-discount/actions/workflows/ci.yml/badge.svg)](https://github.com/rxj0102/etf-premium-discount/actions/workflows/ci.yml)
+
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
