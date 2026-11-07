@@ -7,9 +7,10 @@ Strategy rules (long-only, per ETF):
 * **Exit**: flatten when the z-score crosses back up through 0.
 * **Position sizing**: proportional to the inverse of 21-day rolling
   realised volatility, normalised by the sample-average inverse volatility
-  and capped at 2x, so the average deployed size is ~1x notional.
-* Signals are executed at the next day's close (positions are shifted one
-  day) to avoid look-ahead bias.
+  and capped at 2x (normalised by the expanding mean, no future data), so the average deployed size is ~1x notional.
+* Signals are executed at the next day's close (positions are shifted two
+  days relative to the signal close, i.e. the signal earns the t+2 return) to avoid
+  look-ahead bias.
 
 Reported statistics per ETF, against a buy-and-hold benchmark: annualised
 return, annualised Sharpe ratio, maximum drawdown, per-trade hit rate and
@@ -56,6 +57,7 @@ ENTRY_Z = -2.0
 EXIT_Z = 0.0
 VOL_WINDOW = 21
 MAX_LEVERAGE = 2.0
+EXEC_LAG = 2  # days from the close that fixes the signal to the first day of P&L
 TRADING_DAYS = 252
 
 
@@ -91,8 +93,9 @@ def inverse_vol_weights(
 ) -> pd.Series:
     """Compute normalised inverse-volatility position weights.
 
-    Weights are ``1 / rolling_vol`` rescaled by the sample mean of the
-    inverse volatility (so a typical position is ~1x) and capped.
+    Weights are ``1 / rolling_vol`` rescaled by the *expanding* mean of the
+    inverse volatility known at each date (so a typical position is ~1x and
+    no future volatility leaks into today's size) and capped.
 
     Args:
         returns: Daily simple returns of the ETF.
@@ -104,7 +107,7 @@ def inverse_vol_weights(
     """
     vol = returns.rolling(window).std()
     inv = 1.0 / vol.replace(0, np.nan)
-    weights = inv / inv.mean()
+    weights = inv / inv.expanding(min_periods=window).mean()
     return weights.clip(upper=cap).fillna(0.0)
 
 
@@ -144,12 +147,18 @@ def trade_stats(position: pd.Series, strat_ret: pd.Series) -> tuple[float, float
     return hit_rate, float(np.mean(lengths)), len(pnls)
 
 
-def backtest_etf(close: pd.Series, z: pd.Series) -> dict:
+def backtest_etf(close: pd.Series, z: pd.Series, exec_lag: int = EXEC_LAG) -> dict:
     """Backtest the discount-reversion strategy for one ETF.
 
     Args:
         close: Closing price series.
         z: Rolling z-score of the premium/discount, aligned to ``close``.
+        exec_lag: Days between the close that produces the signal and the
+            first return earned.  The z-score uses day-t price and NAV, so
+            the earliest realistic fill is the *next* close: a signal at the
+            close of t earns the return of t+2 (``exec_lag=2``).  ``1`` earns
+            the t+1 return, i.e. assumes a fill at the very close that
+            produced the signal.
 
     Returns:
         Dict with keys ``stats`` (summary statistics for strategy and
@@ -158,8 +167,9 @@ def backtest_etf(close: pd.Series, z: pd.Series) -> dict:
     """
     close, z = close.align(z, join="inner")
     returns = close.pct_change().fillna(0.0)
-    # Shift by one day: a signal observed at today's close trades tomorrow.
-    position = (signal_from_zscore(z) * inverse_vol_weights(returns)).shift(1)
+    # A signal observed at the close of day t is filled at the close of t+1,
+    # so it first earns the return of day t+2.
+    position = (signal_from_zscore(z) * inverse_vol_weights(returns)).shift(exec_lag)
     position = position.fillna(0.0)
     strat_ret = position * returns
 
