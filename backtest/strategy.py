@@ -148,11 +148,40 @@ def trade_stats(position: pd.Series, strat_ret: pd.Series) -> tuple[float, float
     return hit_rate, float(np.mean(lengths)), len(pnls)
 
 
+def load_daily_rf(path: Path | None = None) -> pd.Series | None:
+    """Daily cash return from the 3-month T-bill yield in ``data/raw/tbill.csv``.
+
+    Returns None when the file is missing (FRED was unreachable at fetch time).
+    The rate applied on day t is the one published at t-1.
+    """
+    path = path or (PROJECT_ROOT / "data" / "raw" / "tbill.csv")
+    if not path.exists():
+        return None
+    s = pd.read_csv(path, index_col=0, parse_dates=True).iloc[:, 0].astype(float) / 100.0
+    return s
+
+
+def _align_rf(rate: pd.Series | None, index: pd.DatetimeIndex) -> pd.Series:
+    if rate is None:
+        return pd.Series(0.0, index=index)
+    r = rate.reindex(rate.index.union(index)).ffill().reindex(index).shift(1)
+    return ((1.0 + r) ** (1.0 / TRADING_DAYS) - 1.0).fillna(0.0)
+
+
+def _excess_sharpe(ret: pd.Series, rf: pd.Series) -> float:
+    ex = ret - rf
+    sd = ex.std()
+    return float(ex.mean() / sd * np.sqrt(TRADING_DAYS)) if sd > 0 else np.nan
+
+
 def backtest_etf(
     close: pd.Series,
     z: pd.Series,
     exec_lag: int = EXEC_LAG,
     cost_bps: float = COST_BPS,
+    rf_rate: pd.Series | None = None,
+    entry: float = ENTRY_Z,
+    exit_: float = EXIT_Z,
 ) -> dict:
     """Backtest the discount-reversion strategy for one ETF.
 
@@ -168,6 +197,10 @@ def backtest_etf(
         cost_bps: One-way transaction cost in basis points, charged on the
             absolute daily change in position (entries, exits and the daily
             inverse-volatility resizing while in a trade).
+        rf_rate: Annual T-bill yield (decimal) indexed by date, or None. The
+            share of capital not in the ETF (1 - position) earns the daily
+            T-bill return; above 1x the excess is financed at the same rate.
+        entry, exit_: z-score entry and exit levels (defaults -2 and 0).
 
     Returns:
         Dict with keys ``stats`` (summary statistics for strategy and
@@ -178,11 +211,12 @@ def backtest_etf(
     returns = close.pct_change().fillna(0.0)
     # A signal observed at the close of day t is filled at the close of t+1,
     # so it first earns the return of day t+2.
-    position = (signal_from_zscore(z) * inverse_vol_weights(returns)).shift(exec_lag)
+    position = (signal_from_zscore(z, entry, exit_) * inverse_vol_weights(returns)).shift(exec_lag)
     position = position.fillna(0.0)
     turnover = position.diff().abs().fillna(position.abs())
     cost = turnover * cost_bps / 1e4
-    strat_ret = position * returns - cost
+    rf = _align_rf(rf_rate, returns.index)
+    strat_ret = position * returns + (1.0 - position) * rf - cost
 
     n = len(strat_ret)
     cum = (1 + strat_ret).cumprod()
@@ -208,7 +242,9 @@ def backtest_etf(
         "n_trades": n_trades,
         "ann_turnover": float(turnover.sum() * TRADING_DAYS / n),
         "cost_drag_ann": float(cost.sum() * TRADING_DAYS / n),
+        "sharpe_excess": _excess_sharpe(strat_ret, rf),
         "bench_ann_return": bench_ann,
+        "bench_sharpe_excess": _excess_sharpe(returns, rf),
         "bench_sharpe": bench_sharpe,
         "bench_max_drawdown": max_drawdown(bench_cum),
     }
@@ -228,9 +264,12 @@ def run_backtests() -> tuple[pd.DataFrame, dict[str, dict]]:
         ticker and the per-ticker result dicts from :func:`backtest_etf`.
     """
     _, zscores, _ = build_spread_panel()
+    rf_rate = load_daily_rf()
+    if rf_rate is None:
+        logger.warning("No data/raw/tbill.csv; cash earns zero in this run")
     results = {}
     for ticker in ETF_TICKERS:
-        results[ticker] = backtest_etf(load_adj_close(ticker), zscores[ticker])
+        results[ticker] = backtest_etf(load_adj_close(ticker), zscores[ticker], rf_rate=rf_rate)
         logger.info(
             "%s: sharpe=%.2f, ann_return=%.2f%%",
             ticker,
@@ -274,6 +313,31 @@ def plot_cumulative_returns(
     return fig
 
 
+ENTRY_GRID = (-1.5, -2.0, -2.5, -3.0)
+EXIT_GRID = (-0.5, 0.0, 0.5)
+
+
+def sensitivity_grid(entries=ENTRY_GRID, exits=EXIT_GRID) -> pd.DataFrame:
+    """Mean excess Sharpe across ETFs for each entry/exit pair.
+
+    Shown to judge whether the default (-2, 0) is a lucky setting. Nothing
+    is chosen from this grid.
+    """
+    _, zscores, _ = build_spread_panel()
+    rf_rate = load_daily_rf()
+    rows = []
+    for e in entries:
+        for x in exits:
+            sh = [
+                backtest_etf(load_adj_close(t), zscores[t], rf_rate=rf_rate, entry=e, exit_=x)
+                ["stats"]["sharpe_excess"]
+                for t in ETF_TICKERS
+            ]
+            rows.append({"entry_z": e, "exit_z": x, "mean_sharpe_excess": float(np.nanmean(sh)),
+                         "min_sharpe_excess": float(np.nanmin(sh)), "max_sharpe_excess": float(np.nanmax(sh))})
+    return pd.DataFrame(rows)
+
+
 def main() -> None:
     """Run all backtests, save outputs and log the summary table."""
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
@@ -283,6 +347,10 @@ def main() -> None:
     daily.to_csv(PROCESSED_DIR / "backtest_returns.csv")
     logger.info("Backtest summary:\n%s", summary.to_string())
     plot_cumulative_returns(results, OUTPUTS_DIR / "backtest_cumulative.png")
+    grid = sensitivity_grid()
+    grid.to_csv(PROCESSED_DIR / "sensitivity_grid.csv", index=False)
+    logger.info("Sensitivity grid (mean excess Sharpe across ETFs):\n%s",
+                grid.pivot(index="entry_z", columns="exit_z", values="mean_sharpe_excess").round(2))
 
 
 if __name__ == "__main__":
