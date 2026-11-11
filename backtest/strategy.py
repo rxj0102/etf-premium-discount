@@ -58,6 +58,7 @@ EXIT_Z = 0.0
 VOL_WINDOW = 21
 MAX_LEVERAGE = 2.0
 EXEC_LAG = 2  # days from the close that fixes the signal to the first day of P&L
+COST_BPS = 5.0  # one-way cost per unit of turnover, basis points (same as etf-nav-arbitrage-study)
 TRADING_DAYS = 252
 
 
@@ -147,7 +148,12 @@ def trade_stats(position: pd.Series, strat_ret: pd.Series) -> tuple[float, float
     return hit_rate, float(np.mean(lengths)), len(pnls)
 
 
-def backtest_etf(close: pd.Series, z: pd.Series, exec_lag: int = EXEC_LAG) -> dict:
+def backtest_etf(
+    close: pd.Series,
+    z: pd.Series,
+    exec_lag: int = EXEC_LAG,
+    cost_bps: float = COST_BPS,
+) -> dict:
     """Backtest the discount-reversion strategy for one ETF.
 
     Args:
@@ -159,6 +165,9 @@ def backtest_etf(close: pd.Series, z: pd.Series, exec_lag: int = EXEC_LAG) -> di
             close of t earns the return of t+2 (``exec_lag=2``).  ``1`` earns
             the t+1 return, i.e. assumes a fill at the very close that
             produced the signal.
+        cost_bps: One-way transaction cost in basis points, charged on the
+            absolute daily change in position (entries, exits and the daily
+            inverse-volatility resizing while in a trade).
 
     Returns:
         Dict with keys ``stats`` (summary statistics for strategy and
@@ -171,7 +180,9 @@ def backtest_etf(close: pd.Series, z: pd.Series, exec_lag: int = EXEC_LAG) -> di
     # so it first earns the return of day t+2.
     position = (signal_from_zscore(z) * inverse_vol_weights(returns)).shift(exec_lag)
     position = position.fillna(0.0)
-    strat_ret = position * returns
+    turnover = position.diff().abs().fillna(position.abs())
+    cost = turnover * cost_bps / 1e4
+    strat_ret = position * returns - cost
 
     n = len(strat_ret)
     cum = (1 + strat_ret).cumprod()
@@ -195,6 +206,8 @@ def backtest_etf(close: pd.Series, z: pd.Series, exec_lag: int = EXEC_LAG) -> di
         "hit_rate": hit_rate,
         "avg_holding_days": avg_hold,
         "n_trades": n_trades,
+        "ann_turnover": float(turnover.sum() * TRADING_DAYS / n),
+        "cost_drag_ann": float(cost.sum() * TRADING_DAYS / n),
         "bench_ann_return": bench_ann,
         "bench_sharpe": bench_sharpe,
         "bench_max_drawdown": max_drawdown(bench_cum),

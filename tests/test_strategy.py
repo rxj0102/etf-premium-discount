@@ -90,3 +90,30 @@ def test_trade_stats_and_drawdown():
     hit, avg_hold, n = trade_stats(pos, ret)
     assert n == 2 and hit == 0.5 and avg_hold == 1.5
     assert max_drawdown((1 + pd.Series([0.1, -0.2, 0.1])).cumprod()) == pytest.approx(-0.2)
+
+
+def _toy(n=300, seed=7):
+    rng = np.random.default_rng(seed)
+    idx = pd.bdate_range("2022-01-03", periods=n)
+    close = pd.Series(100 * np.cumprod(1 + rng.normal(0, 0.01, n)), index=idx)
+    z = pd.Series(np.sin(np.arange(n) / 9.0) * 3, index=idx)  # forces several trades
+    return close, z
+
+
+def test_costs_reduce_returns_by_turnover_times_bps():
+    close, z = _toy()
+    free = backtest_etf(close, z, cost_bps=0.0)
+    costed = backtest_etf(close, z, cost_bps=5.0)
+    drag = free["strategy_returns"] - costed["strategy_returns"]
+    turnover = costed["position"].diff().abs().fillna(costed["position"].abs())
+    assert np.allclose(drag, turnover * 5.0 / 1e4)
+    assert costed["stats"]["ann_return"] < free["stats"]["ann_return"]
+    assert costed["stats"]["cost_drag_ann"] > 0
+
+
+def test_no_cost_when_never_in_position():
+    close, _ = _toy()
+    flat = pd.Series(0.0, index=close.index)
+    res = backtest_etf(close, flat, cost_bps=5.0)
+    assert (res["strategy_returns"] == 0).all()
+    assert res["stats"]["cost_drag_ann"] == 0
