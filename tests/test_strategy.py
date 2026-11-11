@@ -117,3 +117,14 @@ def test_no_cost_when_never_in_position():
     res = backtest_etf(close, flat, cost_bps=5.0)
     assert (res["strategy_returns"] == 0).all()
     assert res["stats"]["cost_drag_ann"] == 0
+
+
+def test_adj_close_used_for_returns_with_fallback(tmp_path, monkeypatch):
+    import analysis.spread as sp
+    idx = pd.bdate_range("2023-01-02", periods=3)
+    pd.DataFrame({"Adj Close": [1.0, 1.1, 1.2], "Close": [2.0, 2.0, 2.0]}, index=idx).to_csv(tmp_path / "AAA.csv")
+    pd.DataFrame({"Close": [3.0, 3.1, 3.2]}, index=idx).to_csv(tmp_path / "BBB.csv")
+    monkeypatch.setattr(sp, "RAW_DIR", tmp_path)
+    assert sp.load_adj_close("AAA").tolist() == [1.0, 1.1, 1.2]
+    assert sp.load_close("AAA").tolist() == [2.0, 2.0, 2.0]  # premium stays on Close
+    assert sp.load_adj_close("BBB").tolist() == [3.0, 3.1, 3.2]

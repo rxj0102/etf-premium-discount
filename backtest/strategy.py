@@ -47,7 +47,7 @@ from analysis.spread import (  # noqa: E402
     OUTPUTS_DIR,
     PROCESSED_DIR,
     build_spread_panel,
-    load_close,
+    load_adj_close,
 )
 from data.fetch import ETF_TICKERS  # noqa: E402
 
@@ -230,7 +230,7 @@ def run_backtests() -> tuple[pd.DataFrame, dict[str, dict]]:
     _, zscores, _ = build_spread_panel()
     results = {}
     for ticker in ETF_TICKERS:
-        results[ticker] = backtest_etf(load_close(ticker), zscores[ticker])
+        results[ticker] = backtest_etf(load_adj_close(ticker), zscores[ticker])
         logger.info(
             "%s: sharpe=%.2f, ann_return=%.2f%%",
             ticker,
