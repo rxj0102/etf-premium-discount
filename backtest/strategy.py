@@ -224,13 +224,11 @@ def backtest_etf(
     ann_ret = float(cum.iloc[-1] ** (TRADING_DAYS / n) - 1)
     bench_ann = float(bench_cum.iloc[-1] ** (TRADING_DAYS / n) - 1)
     vol = strat_ret.std()
-    sharpe = float(strat_ret.mean() / vol * np.sqrt(TRADING_DAYS)) if vol > 0 else np.nan
-    bench_vol = returns.std()
-    bench_sharpe = (
-        float(returns.mean() / bench_vol * np.sqrt(TRADING_DAYS))
-        if bench_vol > 0
-        else np.nan
-    )
+    # Sharpe ratios are in excess of the T-bill return (zero if no rate file).
+    # A raw-return Sharpe is meaningless once idle cash earns interest: a book
+    # that never trades would show a huge Sharpe from the T-bill alone.
+    sharpe = _excess_sharpe(strat_ret, rf)
+    bench_sharpe = _excess_sharpe(returns, rf)
     hit_rate, avg_hold, n_trades = trade_stats(position, strat_ret)
 
     stats = {
@@ -242,9 +240,7 @@ def backtest_etf(
         "n_trades": n_trades,
         "ann_turnover": float(turnover.sum() * TRADING_DAYS / n),
         "cost_drag_ann": float(cost.sum() * TRADING_DAYS / n),
-        "sharpe_excess": _excess_sharpe(strat_ret, rf),
         "bench_ann_return": bench_ann,
-        "bench_sharpe_excess": _excess_sharpe(returns, rf),
         "bench_sharpe": bench_sharpe,
         "bench_max_drawdown": max_drawdown(bench_cum),
     }
@@ -330,7 +326,7 @@ def sensitivity_grid(entries=ENTRY_GRID, exits=EXIT_GRID) -> pd.DataFrame:
         for x in exits:
             sh = [
                 backtest_etf(load_adj_close(t), zscores[t], rf_rate=rf_rate, entry=e, exit_=x)
-                ["stats"]["sharpe_excess"]
+                ["stats"]["sharpe"]
                 for t in ETF_TICKERS
             ]
             rows.append({"entry_z": e, "exit_z": x, "mean_sharpe_excess": float(np.nanmean(sh)),
