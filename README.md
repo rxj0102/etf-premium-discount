@@ -19,7 +19,7 @@ discount-reversion strategy with a Streamlit monitoring dashboard.
 > When a fixed income ETF's premium/discount to NAV exceeds two standard
 > deviations of its recent (63-day) history, the dislocation reflects
 > temporary liquidity pressure rather than a change in fundamental value, and
-> therefore mean-reverts over the following 1–20 trading days — faster and
+> therefore mean-reverts over the following 1–20 trading days, faster and
 > more profitably after deep **discounts** and during **high-VIX** regimes.
 
 ## Folder structure
@@ -72,7 +72,28 @@ jupyter notebook notebooks/research.ipynb
 
 ## Key findings
 
-*(Placeholder — regenerate after running the pipeline on live data.)*
+From a run on 2026-11-11 of the pipeline in Setup, steps 3 to 4, on yfinance prices from 2021-11-11 to 2026-11-10. **NAV is simulated** (see Corrections and caveats), so these numbers test the pipeline, not a market inefficiency. With a simulated NAV the premium/discount carries no information about future prices by construction, and the results should look like noise minus costs, which they do.
+
+**Backtest** (long only on discounts below -2 sigma, exit at 0, two-day execution lag, 5 bps one-way cost on turnover, returns on dividend-adjusted closes). Source: `data/processed/backtest_summary.csv`.
+
+| ETF | Strategy ann. return | Sharpe | Max drawdown | Trades | Cost drag per year | Buy and hold ann. return | Buy and hold Sharpe |
+|-----|------|------|------|------|------|------|------|
+| HYG | 0.7% | 0.24 | -5.3% | 20 | 0.6% | 3.3% | 0.47 |
+| LQD | -2.4% | -0.67 | -13.9% | 16 | 0.5% | -1.0% | -0.07 |
+| JNK | -0.3% | -0.09 | -6.5% | 14 | 0.4% | 3.1% | 0.45 |
+| TLT | -3.8% | -0.52 | -19.4% | 16 | 0.5% | -8.2% | -0.47 |
+| AGG | -1.0% | -0.43 | -8.0% | 13 | 0.3% | -0.3% | -0.01 |
+
+Four of five ETFs lose money. The strategy return beats buy and hold only for TLT, where buy and hold lost 8.2% a year. Drawdowns are smaller for every ETF because the strategy is in cash most of the time. Trade counts of 13 to 20 over five years are too few to separate skill from chance in any case.
+
+**Event study** (118 discount and 101 premium crossings of +/-2 sigma). Mean forward return after the event (dividend-adjusted), percent. Source: `data/processed/reversion_summary.csv`.
+
+| Event | 1 day | 5 days | 10 days | 20 days |
+|-------|-------|--------|---------|---------|
+| discount | 0.03% | -0.12% | -0.28% | -0.48% |
+| premium | 0.01% | -0.04% | -0.14% | -0.22% |
+
+There is no reversion pattern: discount events are not followed by gains. Charts below are from the same run.
 
 - Spread history with stress episodes:
 
@@ -90,6 +111,8 @@ jupyter notebook notebooks/research.ipynb
 
   ![Backtest](outputs/backtest_cumulative.png)
 
+To test the actual hypothesis, drop real issuer NAV files into `data/raw/<TICKER>_nav_external.csv` (iShares and SPDR publish daily NAV history as free downloads) and rerun.
+
 ## Data sources
 
 | Dataset | Source | Notes |
@@ -104,12 +127,14 @@ reproducible simulations so the full pipeline still runs end to end.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).
 
 ## Corrections and caveats
 
-- **Backtest timing.** Despite the documented "next-day close" execution, positions were shifted by one day, so a signal formed from day-t price and NAV earned the day-t+1 return (a fill at the very close that produced the signal). Execution is now lagged by two days (`EXEC_LAG`); pass `exec_lag=1` to reproduce the old convention.
+- **Backtest timing.** Despite the documented next-day close execution, positions were shifted by one day, so a signal formed from day-t price and NAV earned the day-t+1 return (a fill at the very close that produced the signal). Execution is now lagged by two days (`EXEC_LAG`); pass `exec_lag=1` to reproduce the old convention.
 - **Position sizing look-ahead.** Inverse-volatility weights were rescaled by the full-sample mean of inverse volatility; they now use the expanding mean.
 - **The NAV series is simulated** unless you supply `data/raw/<TICKER>_nav_external.csv`. With simulated NAV the premium/discount is noise independent of subsequent price moves, so the backtest and event study demonstrate the pipeline, not a tradable edge. Add real issuer NAV data before drawing any conclusion from `backtest_summary.csv` or `event_study.csv`; regenerate them after the timing fix.
 - Event-study confidence bands treat events as independent although 20-day windows overlap, so they are too narrow.
+- **Transaction costs.** The backtest was frictionless. It now charges 5 bps one way on every unit of turnover, including the daily inverse-volatility resizing.
+- **Total returns.** P&L, buy and hold and event paths used unadjusted closes, leaving out bond ETF distributions. They now use dividend-adjusted closes; the premium/discount stays on the unadjusted close to match NAV.
 - `pytest` and CI added.
