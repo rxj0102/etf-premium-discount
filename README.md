@@ -72,19 +72,30 @@ jupyter notebook notebooks/research.ipynb
 
 ## Key findings
 
-From a run on 2026-11-11 of the pipeline in Setup, steps 3 to 4, on yfinance prices from 2021-11-11 to 2026-11-10. **NAV is simulated** (see Corrections and caveats), so these numbers test the pipeline, not a market inefficiency. With a simulated NAV the premium/discount carries no information about future prices by construction, and the results should look like noise minus costs, which they do.
+From a run on 2026-11-11 of the pipeline in Setup, steps 3 to 4 (rerun after adding T-bill interest), on yfinance prices from 2021-11-11 to 2026-11-10. **NAV is simulated** (see Corrections and caveats), so these numbers test the pipeline, not a market inefficiency. With a simulated NAV the premium/discount carries no information about future prices by construction, and the results should look like noise minus costs, which they do.
 
-**Backtest** (long only on discounts below -2 sigma, exit at 0, two-day execution lag, 5 bps one-way cost on turnover, returns on dividend-adjusted closes). Source: `data/processed/backtest_summary.csv`.
+**Backtest** (long only on discounts below -2 sigma, exit at 0, two-day execution lag, 5 bps one-way cost on turnover, returns on dividend-adjusted closes, idle cash earns the 3-month T-bill rate). Sharpe ratios are in excess of the T-bill rate. Source: `data/processed/backtest_summary.csv`.
 
 | ETF | Strategy ann. return | Sharpe | Max drawdown | Trades | Cost drag per year | Buy and hold ann. return | Buy and hold Sharpe |
 |-----|------|------|------|------|------|------|------|
-| HYG | 0.7% | 0.24 | -5.3% | 20 | 0.6% | 3.3% | 0.47 |
-| LQD | -2.4% | -0.67 | -13.9% | 16 | 0.5% | -1.0% | -0.07 |
-| JNK | -0.3% | -0.09 | -6.5% | 14 | 0.4% | 3.1% | 0.45 |
-| TLT | -3.8% | -0.52 | -19.4% | 16 | 0.5% | -8.2% | -0.47 |
-| AGG | -1.0% | -0.43 | -8.0% | 13 | 0.3% | -0.3% | -0.01 |
+| HYG | 3.6% | -0.09 | -4.1% | 20 | 0.6% | 3.3% | -0.05 |
+| LQD | 0.8% | -0.87 | -9.4% | 16 | 0.5% | -1.0% | -0.52 |
+| JNK | 2.8% | -0.41 | -5.8% | 14 | 0.4% | 3.1% | -0.07 |
+| TLT | -0.6% | -0.62 | -12.1% | 16 | 0.5% | -8.2% | -0.72 |
+| AGG | 2.4% | -0.68 | -4.3% | 13 | 0.3% | -0.3% | -0.65 |
 
-Four of five ETFs lose money. The strategy return beats buy and hold only for TLT, where buy and hold lost 8.2% a year. Drawdowns are smaller for every ETF because the strategy is in cash most of the time. Trade counts of 13 to 20 over five years are too few to separate skill from chance in any case.
+Every strategy Sharpe is negative: the strategy earns less than cash on every ETF, mostly by sitting in T-bills between trades. Buy and hold also trails cash over this window of rising rates. Trade counts of 13 to 20 over five years are too few to separate skill from chance in any case.
+
+**Sensitivity to the entry and exit levels.** Mean excess Sharpe across the five ETFs, same rules otherwise. Source: `data/processed/sensitivity_grid.csv`. Nothing is chosen from this grid.
+
+| Entry z | exit -0.5 | exit +0.0 | exit +0.5 |
+|---|---|---|---|
+| -3.0 | -0.30 | -0.35 | -0.45 |
+| -2.5 | -0.39 | -0.50 | -0.51 |
+| -2.0 | -0.40 | -0.54 | -0.45 |
+| -1.5 | -0.50 | -0.55 | -0.52 |
+
+No setting is positive on average, so the default (-2, 0) is not an unlucky choice; with a simulated NAV there is no edge to find.
 
 **Event study** (118 discount and 101 premium crossings of +/-2 sigma). Mean forward return after the event (dividend-adjusted), percent. Source: `data/processed/reversion_summary.csv`.
 
@@ -136,5 +147,6 @@ MIT, see [LICENSE](LICENSE).
 - **The NAV series is simulated** unless you supply `data/raw/<TICKER>_nav_external.csv`. With simulated NAV the premium/discount is noise independent of subsequent price moves, so the backtest and event study demonstrate the pipeline, not a tradable edge. Add real issuer NAV data before drawing any conclusion from `backtest_summary.csv` or `event_study.csv`; regenerate them after the timing fix.
 - Event-study confidence bands treat events as independent although 20-day windows overlap, so they are too narrow.
 - **Transaction costs.** The backtest was frictionless. It now charges 5 bps one way on every unit of turnover, including the daily inverse-volatility resizing.
+- **Interest on cash.** Idle cash earned nothing. It now earns the 3-month T-bill rate (FRED DGS3MO, saved by `data/fetch.py` to `data/raw/tbill.csv`), and Sharpe ratios are measured in excess of it. If FRED is unreachable, cash earns zero and the log says so.
 - **Total returns.** P&L, buy and hold and event paths used unadjusted closes, leaving out bond ETF distributions. They now use dividend-adjusted closes; the premium/discount stays on the unadjusted close to match NAV.
 - `pytest` and CI added.
