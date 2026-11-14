@@ -31,7 +31,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from analysis.reversion import path_summary, reversion_paths  # noqa: E402
-from analysis.spread import build_spread_panel, load_close  # noqa: E402
+from analysis.spread import build_spread_panel, load_adj_close  # noqa: E402
 from backtest.strategy import run_backtests  # noqa: E402
 from data import fetch  # noqa: E402
 
@@ -73,7 +73,7 @@ def load_analytics(today: dt.date):
     """
     refresh_data(today)
     spreads, zscores, events = build_spread_panel()
-    closes = {t: load_close(t) for t in fetch.ETF_TICKERS}
+    closes = {t: load_adj_close(t) for t in fetch.ETF_TICKERS}
     backtest_summary, _ = run_backtests()
     return spreads, zscores, events, closes, backtest_summary
 

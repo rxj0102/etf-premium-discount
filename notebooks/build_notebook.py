@@ -177,7 +177,7 @@ CELLS = [
         "tagged_events, regime_table = regime.run_regime_analysis()\n"
         "regime_table.to_csv(regime.PROCESSED_DIR / 'regime_summary.csv')\n"
         "\n"
-        "closes = {t: spread.load_close(t) for t in fetch.ETF_TICKERS}\n"
+        "closes = {t: spread.load_adj_close(t) for t in fetch.ETF_TICKERS}\n"
         "discount = tagged_events[tagged_events['side'] == 'discount']\n"
         "summaries_by_regime = {\n"
         "    r: reversion.path_summary(reversion.reversion_paths(\n"

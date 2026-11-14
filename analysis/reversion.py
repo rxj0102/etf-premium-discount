@@ -37,7 +37,7 @@ from analysis.spread import (  # noqa: E402
     OUTPUTS_DIR,
     PROCESSED_DIR,
     build_spread_panel,
-    load_close,
+    load_adj_close,
 )
 from data.fetch import ETF_TICKERS  # noqa: E402
 
@@ -172,7 +172,7 @@ def run_event_study() -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
         table and a mapping of side to average path summary.
     """
     _, _, events = build_spread_panel()
-    closes = {t: load_close(t) for t in ETF_TICKERS}
+    closes = {t: load_adj_close(t) for t in ETF_TICKERS}
     event_returns = forward_returns_for_events(events, closes)
     summaries = {}
     for side in ("discount", "premium"):
