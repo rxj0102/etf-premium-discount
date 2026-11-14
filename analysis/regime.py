@@ -45,7 +45,7 @@ from analysis.spread import (  # noqa: E402
     OUTPUTS_DIR,
     PROCESSED_DIR,
     build_spread_panel,
-    load_close,
+    load_adj_close,
     load_vix,
 )
 from data.fetch import ETF_TICKERS  # noqa: E402
@@ -180,7 +180,7 @@ def run_regime_analysis() -> tuple[pd.DataFrame, pd.DataFrame]:
         forward returns and reversion speed, and the per-regime summary.
     """
     spreads, zscores, events = build_spread_panel()
-    closes = {t: load_close(t) for t in ETF_TICKERS}
+    closes = {t: load_adj_close(t) for t in ETF_TICKERS}
     events = tag_regimes(events, load_vix())
     events = forward_returns_for_events(events, closes)
     events["days_to_revert"] = days_to_zero_cross(events, zscores)
@@ -194,7 +194,7 @@ def main() -> None:
     summary.to_csv(PROCESSED_DIR / "regime_summary.csv")
     logger.info("Regime summary:\n%s", summary.to_string())
 
-    closes = {t: load_close(t) for t in ETF_TICKERS}
+    closes = {t: load_adj_close(t) for t in ETF_TICKERS}
     discount = events[events["side"] == "discount"]
     summaries = {}
     for regime in ("high_vix", "low_vix"):

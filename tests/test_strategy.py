@@ -90,3 +90,65 @@ def test_trade_stats_and_drawdown():
     hit, avg_hold, n = trade_stats(pos, ret)
     assert n == 2 and hit == 0.5 and avg_hold == 1.5
     assert max_drawdown((1 + pd.Series([0.1, -0.2, 0.1])).cumprod()) == pytest.approx(-0.2)
+
+
+def _toy(n=300, seed=7):
+    rng = np.random.default_rng(seed)
+    idx = pd.bdate_range("2022-01-03", periods=n)
+    close = pd.Series(100 * np.cumprod(1 + rng.normal(0, 0.01, n)), index=idx)
+    z = pd.Series(np.sin(np.arange(n) / 9.0) * 3, index=idx)  # forces several trades
+    return close, z
+
+
+def test_costs_reduce_returns_by_turnover_times_bps():
+    close, z = _toy()
+    free = backtest_etf(close, z, cost_bps=0.0)
+    costed = backtest_etf(close, z, cost_bps=5.0)
+    drag = free["strategy_returns"] - costed["strategy_returns"]
+    turnover = costed["position"].diff().abs().fillna(costed["position"].abs())
+    assert np.allclose(drag, turnover * 5.0 / 1e4)
+    assert costed["stats"]["ann_return"] < free["stats"]["ann_return"]
+    assert costed["stats"]["cost_drag_ann"] > 0
+
+
+def test_no_cost_when_never_in_position():
+    close, _ = _toy()
+    flat = pd.Series(0.0, index=close.index)
+    res = backtest_etf(close, flat, cost_bps=5.0)
+    assert (res["strategy_returns"] == 0).all()
+    assert res["stats"]["cost_drag_ann"] == 0
+
+
+def test_adj_close_used_for_returns_with_fallback(tmp_path, monkeypatch):
+    import analysis.spread as sp
+    idx = pd.bdate_range("2023-01-02", periods=3)
+    pd.DataFrame({"Adj Close": [1.0, 1.1, 1.2], "Close": [2.0, 2.0, 2.0]}, index=idx).to_csv(tmp_path / "AAA.csv")
+    pd.DataFrame({"Close": [3.0, 3.1, 3.2]}, index=idx).to_csv(tmp_path / "BBB.csv")
+    monkeypatch.setattr(sp, "RAW_DIR", tmp_path)
+    assert sp.load_adj_close("AAA").tolist() == [1.0, 1.1, 1.2]
+    assert sp.load_close("AAA").tolist() == [2.0, 2.0, 2.0]  # premium stays on Close
+    assert sp.load_adj_close("BBB").tolist() == [3.0, 3.1, 3.2]
+
+
+def test_flat_book_earns_the_tbill_rate():
+    close, _ = _toy()
+    flat = pd.Series(0.0, index=close.index)
+    rate = pd.Series(0.05, index=close.index)
+    res = backtest_etf(close, flat, cost_bps=0.0, rf_rate=rate)
+    daily = 1.05 ** (1 / 252) - 1
+    assert np.allclose(res["strategy_returns"].iloc[1:], daily)
+    assert res["strategy_returns"].iloc[0] == 0.0  # no prior-day rate yet
+
+
+def test_no_rate_means_no_interest():
+    close, z = _toy()
+    a = backtest_etf(close, z, cost_bps=0.0)
+    b = backtest_etf(close, z, cost_bps=0.0, rf_rate=None)
+    assert np.allclose(a["strategy_returns"], b["strategy_returns"])
+
+
+def test_entry_exit_parameters_are_used():
+    close, z = _toy()
+    tight = backtest_etf(close, z, entry=-1.0, exit_=0.0)
+    loose = backtest_etf(close, z, entry=-2.9, exit_=0.0)
+    assert tight["stats"]["n_trades"] >= loose["stats"]["n_trades"]

@@ -381,6 +381,17 @@ def main() -> None:
     oas = fetch_oas(start, end)
     oas.to_csv(RAW_DIR / "oas.csv")
     logger.info("Saved OAS spreads (%d rows)", len(oas))
+
+    # 3-month T-bill yield (percent) for interest on cash in the backtest.
+    # Not simulated if FRED is unreachable: the backtest then credits no
+    # interest and says so.
+    tbill = fetch_fred_series("DGS3MO", start)
+    if tbill is not None:
+        tbill = tbill.loc[(tbill.index >= start) & (tbill.index <= end)]
+        tbill.rename("tbill_pct").to_frame().rename_axis("Date").to_csv(RAW_DIR / "tbill.csv")
+        logger.info("Saved T-bill yield (%d rows)", len(tbill))
+    else:
+        logger.warning("T-bill yield unavailable; backtest will credit no interest on cash")
     logger.info("Done. Raw data written to %s", RAW_DIR)
 
 

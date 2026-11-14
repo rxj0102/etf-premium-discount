@@ -68,6 +68,21 @@ def load_close(ticker: str) -> pd.Series:
     return df["Close"].rename(ticker)
 
 
+def load_adj_close(ticker: str) -> pd.Series:
+    """Load the dividend-adjusted close for one ETF from ``data/raw/``.
+
+    Use this for anything that measures returns (backtest P&L, event
+    reversion paths, buy-and-hold). Bond ETFs pay monthly distributions, so
+    unadjusted closes understate total return by roughly the yield. The
+    premium/discount itself stays on the unadjusted close, because NAV is
+    quoted on the same price basis. Falls back to ``Close`` when the file
+    has no ``Adj Close`` column (for example a simulated price file).
+    """
+    df = pd.read_csv(RAW_DIR / f"{ticker}.csv", index_col=0, parse_dates=True)
+    col = "Adj Close" if "Adj Close" in df.columns else "Close"
+    return df[col].rename(ticker)
+
+
 def load_nav(ticker: str) -> pd.Series:
     """Load the NAV series for one ETF from ``data/raw/``.
 
